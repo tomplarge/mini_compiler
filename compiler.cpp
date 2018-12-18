@@ -8,7 +8,7 @@ using namespace std;
 void trim(string &str);
 
 struct Token{
-	enum Type {DEF, END, IDENTIFIER, INTEGER, OPAREN, CPAREN, COMMA};
+	enum Type {DEF, END, IDENTIFIER, INTEGER, OPAREN, CPAREN, COMMA, OP};
 
 	int type;
 	string value;
@@ -25,8 +25,8 @@ struct Token{
 
 class Tokenizer {
 public:
-	static const int N = 7;
-	const string re[N] = {"^(\\bdef\\b)", "^(\\bend\\b)", "^(\\b[a-zA-Z]+\\b)", "^(\\b[0-9]+\\b)", "^\\(", "^\\)", ","};
+	static const int N = 8;
+	const string re[N] = {"^(\\bdef\\b)", "^(\\bend\\b)", "^(\\b[a-zA-Z]+\\b)", "^(\\b[0-9]+\\b)", "^\\(", "^\\)", "\\,", "[\\+, \\-, \\/, \\*]"};
 	string code;
 
 	Tokenizer(string fname) {
@@ -68,7 +68,7 @@ public:
 
 class Node {
 public:
-	enum Type {DEFNODE, INTNODE, CALLNODE, VARNODE};
+	enum Type {DEFNODE, INTNODE, CALLNODE, VARNODE, OPNODE};
 
 	Node() {}
 
@@ -147,6 +147,25 @@ public:
 	}
 };
 
+class OpNode : public ExprNode {
+public:
+	string op;
+	ExprNode* arg_expr1;
+	ExprNode* arg_expr2;
+
+	OpNode(string o, ExprNode* a1, ExprNode* a2) : op(o), arg_expr1(a1), arg_expr2(a2) { }
+
+	int type() { return Node::Type::OPNODE; }
+
+	void print() {
+		cout << "[(OpNode)op=" << op << ", arg_exprs=(";
+		arg_expr1->print();
+		cout << ", ";
+	 	arg_expr2->print();
+	 	cout << ")]";
+	}
+};
+
 class Parser {
 public:
 	deque<Token> tokens;
@@ -195,6 +214,8 @@ public:
 			return parse_int();
 		} else if (peek(Token::Type::IDENTIFIER) && peek(Token::Type::OPAREN, 1)) {
 			return parse_call();
+		} else if (peek(Token::Type::OP)) {
+			return parse_op();
 		} else {
 			return parse_var_ref();
 		}
@@ -237,6 +258,14 @@ public:
 		string var = consume(Token::Type::IDENTIFIER);
 
 		return new VarNode(var);
+	}
+
+	OpNode* parse_op() {
+		string op = consume(Token::Type::OP);
+		ExprNode* arg_expr1 = parse_expr();
+		ExprNode* arg_expr2 = parse_expr();
+
+		return new OpNode(op, arg_expr1, arg_expr2);
 	}
 
 	DefNode* parse() {
@@ -307,9 +336,15 @@ public:
 				return varnode->name;
 			}
 
+			case Node::Type::OPNODE: {
+				OpNode* opnode = (OpNode*) node;
+
+				return "(" + generate_helper(opnode->arg_expr1) + opnode->op + generate_helper(opnode->arg_expr2) + ")";
+			}
+
 			default:
 				char buf[100];
-				sprintf(buf, "Could not parse given class type %d", node->type());
+				sprintf(buf, "Could not generate for given class type %d", node->type());
 				throw runtime_error(buf);
 		}
 	}
@@ -334,10 +369,9 @@ int main() {
 	Generator generator = Generator(tree);
 	string generated = generator.generate();
 
-	string RUNTIME = "function add(x,y) { return x+y };";
 	string TEST = "console.log(f(1,2));";
 
-	cout << RUNTIME << "\n" << generated << "\n" << TEST << endl;
+	cout << generated << "\n" << TEST << endl;
 
 	return 0;
 }
